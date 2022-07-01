@@ -264,7 +264,6 @@ int sys_user_wait(int pid)
     bool found = FALSE;
     //检查进程池是否有属于当前进程的子进程
     for (int i = 0; i < NPROC; i++)
-    {
       if (procs[i].parent == current)
       {
         found = TRUE;
@@ -275,13 +274,12 @@ int sys_user_wait(int pid)
           return i;
         }
       }
-      if (found)
-        //如果有子进程，但是没有结束，则返回WAIT_NOT_END
-        return WAIT_NOT_END;
-      else
-        //否则pid不合法，返回WAIT_PID_ILLEGAL
-        return WAIT_PID_ILLEGAL;
-    }
+    if (found)
+      //如果有子进程，但是没有结束，则返回WAIT_NOT_END
+      return WAIT_NOT_END;
+    else
+      //否则pid不合法，返回WAIT_PID_ILLEGAL
+      return WAIT_PID_ILLEGAL;
   }
   // 当pid大于0时，父进程等待进程号为pid的子进程退出即返回子进程的pid；
   else if (pid > 0)
@@ -292,14 +290,72 @@ int sys_user_wait(int pid)
     //检查pid是否属于当前进程的子进程
     if (procs[pid].parent != current)
       return WAIT_PID_ILLEGAL;
-    //检查该子进程是否已经结束，结束，则返回子进程pid
-    if (procs[pid].status == ZOMBIE)
-    {
-      procs[pid].status = FREE;
-      return pid;
-    }
     else
-      return WAIT_NOT_END;
+    {
+      //检查该子进程是否已经结束，结束，则返回子进程pid
+      if (procs[pid].status == ZOMBIE)
+      {
+        procs[pid].status = FREE;
+        return pid;
+      }
+      else
+        return WAIT_NOT_END;
+    }
   }
-  return WAIT_NOT_END;
+  else
+    return WAIT_PID_ILLEGAL;
 }
+
+// wait函数接受一个参数pid：
+// 当pid为-1时，父进程等待任意一个子进程退出即返回子进程的pid；
+// 当pid大于0时，父进程等待进程号为pid的子进程退出即返回子进程的pid；
+// 如果pid不合法或pid大于0且pid对应的进程不是当前进程的子进程，返回-1。
+// int sys_user_wait(int pid)
+// {
+//   // 当pid为-1时，父进程等待任意一个子进程退出即返回子进程的pid；
+//   if (pid == -1)
+//   {
+//     bool found = FALSE;
+//     //检查进程池是否有属于当前进程的子进程
+//     for (int i = 0; i < NPROC; i++)
+//     {
+//       if (procs[i].parent == current)
+//       {
+//         found = TRUE;
+//         //检查该子进程是否已经结束，结束，则返回子进程pid
+//         if (procs[i].status == ZOMBIE)
+//         {
+//           procs[i].status = FREE;
+//           return i;
+//         }
+//       }
+//       if (found)
+//         //如果有子进程，但是没有结束，则返回WAIT_NOT_END
+//         return WAIT_NOT_END;
+//       else
+//         //否则pid不合法，返回WAIT_PID_ILLEGAL
+//         return WAIT_PID_ILLEGAL;
+//     }
+//   }
+//   // 当pid大于0时，父进程等待进程号为pid的子进程退出即返回子进程的pid；
+//   else if (pid > 0)
+//   {
+//     //检查pid是否合法
+//     if (pid >= NPROC)
+//       return WAIT_PID_ILLEGAL;
+//     //检查pid是否属于当前进程的子进程
+//     if (procs[pid].parent != current)
+//       return WAIT_PID_ILLEGAL;
+//     else
+//     {
+//        //检查该子进程是否已经结束，结束，则返回子进程pid
+//       if (procs[pid].status == ZOMBIE)
+//       {
+//         procs[pid].status = FREE;
+//         return pid;
+//       }
+//       else
+//         return WAIT_NOT_END;
+//     }
+//   }else return WAIT_PID_ILLEGAL;
+// }
