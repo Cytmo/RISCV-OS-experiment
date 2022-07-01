@@ -191,7 +191,7 @@ void *user_va_to_pa(pagetable_t page_dir, void *va)
     //首先通过页表项*pte取得页地址
     uint64 pa = PTE2PA(*pte);
     //与业内偏移相加即为物理地址
-    pa+= (va_tmp & ((1 << PGSHIFT) - 1));
+    pa += (va_tmp & ((1 << PGSHIFT) - 1));
     return (void *)pa;
   }
   else
@@ -216,7 +216,8 @@ void user_vm_map(pagetable_t page_dir, uint64 va, uint64 size, uint64 pa, int pe
 // unmap virtual address [va, va+size] from the user app.
 // reclaim the physical pages if free!=0
 //
-void user_vm_unmap(pagetable_t page_dir, uint64 va, uint64 size, int free) {
+void user_vm_unmap(pagetable_t page_dir, uint64 va, uint64 size, int free)
+{
   // TODO (lab2_2): implement user_vm_unmap to disable the mapping of the virtual pages
   // in [va, va+size], and free the corresponding physical pages used by the virtual
   // addresses when if free is not zero.
@@ -224,6 +225,9 @@ void user_vm_unmap(pagetable_t page_dir, uint64 va, uint64 size, int free) {
   // (use free_page() defined in pmm.c) the physical pages. lastly, invalidate the PTEs.
   // as naive_free reclaims only one page at a time, you only need to consider one page
   // to make user/app_naive_malloc to produce the correct hehavior.
-  panic( "You have to implement user_vm_unmap to free pages using naive_free in lab2_2.\n" );
 
+  //首选通过lookup_pa函数得到物理地址，然后通过free_page函数释放物理页面。
+  uint64 pa = lookup_pa(page_dir, va);
+  free_page((void *)pa);
+  // panic("You have to implement user_vm_unmap to free pages using naive_free in lab2_2.\n");
 }
