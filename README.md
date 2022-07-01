@@ -241,16 +241,27 @@ User exit with code:0.
 
 
 
-
-
 ##  lab1_challenge1 打印用户程序调用栈
 
 ### 修改内容
 
-` kernal/strap.c`
+` kernel/syscall.c，kernel/syscall.h，user/user_lib.c，user/user_lib.h`
 
 ```C
+//user/user_lib.h 添加对应的函数
+int print_backtrace(int n);
+//kernel/syscall.c 添加对应的系统调用处理函数
+//print_backtrace() is used by user/lab3_1_backtrace.c
+int print_backtrace(int n) {
+  return do_user_call(SYS_user_backtrace, n, 0, 0, 0, 0, 0, 0);
+}
 
+//相应的，在/kernel/syscall.h中添加对应的宏
+#define SYS_user_backtrace (SYS_user_base + 6)
+
+//在/kernel/syscall.c long do_syscall(long a0, long a1, long a2, long a3, long a4, long a5, long a6, long a7)中添加对应的宏
+  case SYS_user_backtrace:
+    return sys_user_backtrace(a1);
 ```
 
 
@@ -268,32 +279,6 @@ User exit with code:0.
 #### 1
 
 
-
-#### 
-
-## lab1_challenge2 打印异常代码行
-
-### 修改内容
-
-` `
-
-```C
-
-```
-
-
-
-### 运行结果
-
-```bash
-
-```
-
-
-
-### 思考题
-
-#### 1
 
 ## lab2_1 系统调用
 
@@ -900,4 +885,232 @@ System is shutting down with exit code 0.
 ```
 
 
+
+##  lab3_challenge1 进程等待和数据段复制（难度：★★☆☆☆）
+
+### 修改内容
+
+通过修改PKE内核和系统调用，为用户程序提供wait函数的功能，wait函数接受一个参数pid：
+当pid为-1时，父进程等待任意一个子进程退出即返回子进程的pid；
+当pid大于0时，父进程等待进程号为pid的子进程退出即返回子进程的pid；
+如果pid不合法或pid大于0且pid对应的进程不是当前进程的子进程，返回-1。
+补充do_fork函数，实验3_1实现了代码段的复制，你需要继续实现数据段的复制并保证fork后父子进程的数据段相互独立。
+
+` /user/user_lib.h`
+
+` /user/user_lib.c`
+
+```C
+//user_lib.h 添加系统调用定义
+int wait(int pid);
+
+//user_lic.c添加函数体
+//wait
+int wait(int pid)
+{
+  //若wait系统调用返回WAIT_NOT_END，子进程尚未终止，则继续等待，释放cpu
+  //若返回WAIT_PID_ILLEGAL,则说明pid不合法，返回-1
+  //若返回值不是以上两种，则说明子进程已经正常终止，返回子进程的pid
+  while(1)
+  {
+    int status = do_user_call(SYS_user_wait, pid, 0, 0, 0, 0, 0, 0);
+    switch (status)
+    {
+    case WAIT_NOT_END:
+      yield();
+      break;
+    case WAIT_PID_ILLEGAL:
+      return -1;
+    default:
+      return status;
+      break;
+    }
+  }
+}
+```
+
+` /kernel/syscall.h`
+
+` /kernel/syscall.c`
+
+```c
+//添加wait操作的宏定义
+#define SYS_user_wait (SYS_user_base + 6)
+
+//跳转到wait的处理函数
+long do_syscall(long a0, long a1, long a2, long a3, long a4, long a5, long a6, long a7)
+{
+  switch (a0)
+  {
+  case SYS_user_print:
+    return sys_user_print((const char *)a1, a2);
+  case SYS_user_exit:
+    return sys_user_exit(a1);
+  case SYS_user_allocate_page:
+    return sys_user_allocate_page();
+  case SYS_user_free_page:
+    return sys_user_free_page(a1);
+  case SYS_user_fork:
+    return sys_user_fork();
+  case SYS_user_yield:
+    return sys_user_yield();
+  //add here
+  case SYS_user_wait:
+    return wait(a1);  
+  default:
+    panic("Unknown syscall %ld \n", a0);
+  }
+}
+```
+
+
+
+` /kernel/process.c`
+
+` /kernel/process.h`
+
+```c
+//process.h
+int sys_user_wait(int pid);
+//process.c
+//数据段复制
+ case DATA_SEGMENT:
+    {
+      //进行数据段复制，将所有虚拟页映射到新的物理页
+      //循环取得parent的数据段的所有页 mapping_info is unused if npages == 0
+      for (int j = 0; j < parent->mapped_info[i].npages; j++)
+      {
+        //取得parent的数据段的物理地址，其虚拟地址存储在mapped_info[i].va
+        uint64 address = lookup_pa(parent->pagetable, parent->mapped_info[i].va + j * PGSIZE);
+        //分配新页，并将父进程的数据段内容映射到新页上
+        char *newaddress = alloc_page();
+        memcpy(newaddress, (void *)address, PGSIZE);
+        map_pages(child->pagetable, parent->mapped_info[i].va + j * PGSIZE, PGSIZE,
+                  (uint64)newaddress, prot_to_type(PROT_WRITE | PROT_READ, 1));
+      }
+
+      // after mapping, register the vm region (do not delete codes below!)
+      child->mapped_info[child->total_mapped_region].va = parent->mapped_info[i].va;
+      child->mapped_info[child->total_mapped_region].npages =
+          parent->mapped_info[i].npages;
+      child->mapped_info[child->total_mapped_region].seg_type = DATA_SEGMENT;
+      child->total_mapped_region++;
+      break;
+    }
+// 进程等待实现
+// wait函数接受一个参数pid：
+// 当pid为-1时，父进程等待任意一个子进程退出即返回子进程的pid；
+// 当pid大于0时，父进程等待进程号为pid的子进程退出即返回子进程的pid；
+// 如果pid不合法或pid大于0且pid对应的进程不是当前进程的子进程，返回-1。
+int sys_user_wait(int pid)
+{
+  // 当pid为-1时，父进程等待任意一个子进程退出即返回子进程的pid；
+  if (pid == -1)
+  {
+    bool found = FALSE;
+    //检查进程池是否有属于当前进程的子进程
+    for (int i = 0; i < NPROC; i++)
+    {
+      if (procs[i].parent == current)
+      {
+        found = TRUE;
+        //检查该子进程是否已经结束，结束，则返回子进程pid
+        if (procs[i].status == ZOMBIE)
+        {
+          procs[i].status = FREE;
+          return i;
+        }
+      }
+      if (found)
+        //如果有子进程，但是没有结束，则返回WAIT_NOT_END
+        return WAIT_NOT_END;
+      else
+        //否则pid不合法，返回WAIT_PID_ILLEGAL
+        return WAIT_PID_ILLEGAL;
+    }
+  }
+  // 当pid大于0时，父进程等待进程号为pid的子进程退出即返回子进程的pid；
+  else if (pid > 0)
+  {
+    //检查pid是否合法
+    if (pid >= NPROC)
+      return WAIT_PID_ILLEGAL;
+    //检查pid是否属于当前进程的子进程
+    if (procs[pid].parent != current)
+      return WAIT_PID_ILLEGAL;
+    //检查该子进程是否已经结束，结束，则返回子进程pid
+    if (procs[pid].status == ZOMBIE)
+    {
+      procs[pid].status = FREE;
+      return pid;
+    }
+    else
+      return WAIT_NOT_END;
+  }
+  return WAIT_NOT_END;
+}
+
+```
+
+
+
+### 运行结果
+
+```bash
+cytmo@Cytmo-Laptop:~/riscv-pke[lab3_challenge1_wait]> make run
+linking  obj/util.a ...
+Util lib has been build into "obj/util.a"
+linking  obj/spike_interface.a ...
+Spike lib has been build into "obj/spike_interface.a"
+compiling kernel/process.c
+linking obj/riscv-pke ...
+PKE core has been built into "obj/riscv-pke"
+linking obj/app_wait ...
+User app has been built into "obj/app_wait"
+********************HUST PKE********************
+spike obj/riscv-pke obj/app_wait
+In m_start, hartid:0
+HTIF is available!
+(Emulated) memory size: 2048 MB
+Enter supervisor mode...
+PKE kernel start 0x0000000080000000, PKE kernel end: 0x0000000080009000, PKE kernel size: 0x0000000000009000 .
+free physical memory address: [0x0000000080009000, 0x0000000087ffffff] 
+kernel memory manager is initializing ...
+KERN_BASE 0x0000000080000000
+physical address of _etext is: 0x0000000080005000
+kernel page table is on 
+Switch to user mode...
+in alloc_proc. user frame 0x0000000087fbc000, user stack 0x000000007ffff000, user kstack 0x0000000087fbb000 
+User application is loading.
+Application: obj/app_wait
+CODE_SEGMENT added at mapped info offset:3
+DATA_SEGMENT added at mapped info offset:4
+Application program entry point (virtual address): 0x00000000000100b0
+going to insert process 0 to ready queue.
+going to schedule process 0 to run.
+User call fork.
+will fork a child from parent 0.
+in alloc_proc. user frame 0x0000000087fae000, user stack 0x000000007ffff000, user kstack 0x0000000087fad000 
+going to insert process 1 to ready queue.
+going to insert process 0 to ready queue.
+going to schedule process 1 to run.
+User call fork.
+will fork a child from parent 1.
+in alloc_proc. user frame 0x0000000087fa1000, user stack 0x000000007ffff000, user kstack 0x0000000087fa0000 
+going to insert process 2 to ready queue.
+going to insert process 1 to ready queue.
+going to schedule process 0 to run.
+going to insert process 0 to ready queue.
+going to schedule process 2 to run.
+Grandchild process end, flag = 2.
+User exit with code:0.
+going to schedule process 1 to run.
+Child process end, flag = 1.
+User exit with code:0.
+going to schedule process 0 to run.
+Parent process end, flag = 0.
+User exit with code:0.
+no more ready processes, system shutdown now.
+System is shutting down with exit code 0.
+```
 
