@@ -62,11 +62,11 @@ void handle_user_page_fault(uint64 mcause, uint64 sepc, uint64 stval)
 
     //首先判断缺页的逻辑地址在用户进程逻辑地址空间中的位置，
     //看是不是比USER_STACK_TOP小，且比我们预设的可能的用户栈的最小栈底指针要大
-    if ((stval < 0x7ffff000) && (stval >= (0x7ffff000 - 0x14000))) 
-    { 
+    if ((stval < 0x7ffff000) && (stval >= (0x7ffff000 - 0x14000)))
+    {
       //若为合法的逻辑地址，则分配一个新的物理页，并将其映射到缺页的逻辑地址上
       void *pa = alloc_page();
-      //4k对齐
+      // 4k对齐
       uint64 va = stval & 0xfffffffffffff000;
       user_vm_map((pagetable_t)current->pagetable, va, PGSIZE, (uint64)pa,
                   prot_to_type(PROT_WRITE | PROT_READ, 1));
@@ -86,13 +86,30 @@ void handle_user_page_fault(uint64 mcause, uint64 sepc, uint64 stval)
 //
 // implements round-robin scheduling
 //
-void rrsched() {
+void rrsched()
+{
   // TODO (lab3_3): implements round-robin scheduling.
   // hint: increase the tick_count member of current process by one, if it is bigger than
   // TIME_SLICE_LEN (means it has consumed its time slice), change its status into READY,
   // place it in the rear of ready queue, and finally schedule next process to run.
-  panic( "You need to further implement the timer handling in lab3_3.\n" );
 
+  /*实现循环轮转调度时，应采取的逻辑为：
+
+  判断当前进程的tick_count加1后是否大于等于TIME_SLICE_LEN？
+  若答案为yes，则应将当前进程的tick_count清零，并将当前进程加入就绪队列，转进程调度；
+  若答案为no，则应将当前进程的tick_count加1，并返回。
+  */
+  if(current->tick_count++ >= TIME_SLICE_LEN)
+  {
+    current->tick_count = 0;
+    insert_to_ready_queue(current);
+    schedule();
+  }
+  else
+  {
+    current->tick_count++;
+  }
+  // panic("You need to further implement the timer handling in lab3_3.\n");
 }
 
 //
@@ -113,27 +130,6 @@ void smode_trap_handler(void)
   // if the cause of trap is syscall from user application
   uint64 cause = read_csr(scause);
 
-<<<<<<< HEAD
-  switch (cause) {
-    case CAUSE_USER_ECALL:
-      handle_syscall(current->trapframe);
-      break;
-    case CAUSE_MTIMER_S_TRAP:
-      handle_mtimer_trap();
-      rrsched();
-      break;
-    case CAUSE_STORE_PAGE_FAULT:
-    case CAUSE_LOAD_PAGE_FAULT:
-      // the address of missing page is stored in stval
-      // call handle_user_page_fault to process page faults
-      handle_user_page_fault(cause, read_csr(sepc), read_csr(stval));
-      break;
-    default:
-      sprint("smode_trap_handler(): unexpected scause %p\n", read_csr(scause));
-      sprint("            sepc=%p stval=%p\n", read_csr(sepc), read_csr(stval));
-      panic( "unexpected exception happened.\n" );
-      break;
-=======
   switch (cause)
   {
   case CAUSE_USER_ECALL:
@@ -141,6 +137,7 @@ void smode_trap_handler(void)
     break;
   case CAUSE_MTIMER_S_TRAP:
     handle_mtimer_trap();
+    rrsched();
     break;
   case CAUSE_STORE_PAGE_FAULT:
   case CAUSE_LOAD_PAGE_FAULT:
@@ -153,7 +150,6 @@ void smode_trap_handler(void)
     sprint("            sepc=%p stval=%p\n", read_csr(sepc), read_csr(stval));
     panic("unexpected exception happened.\n");
     break;
->>>>>>> lab3_2_yield
   }
 
   // continue the execution of current process.
