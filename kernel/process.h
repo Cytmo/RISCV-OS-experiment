@@ -2,7 +2,9 @@
 #define _PROC_H_
 
 #include "riscv.h"
-
+#define WAIT_NOT_END -2
+#define WAIT_PID_ILLEGAL -1
+#define WAIT_END_NORMALLY 0
 typedef struct trapframe {
   // space to store context (all common registers)
   /* offset:0   */ riscv_regs regs;
@@ -84,6 +86,7 @@ int free_process( process* proc );
 // fork a child from parent
 int do_fork(process* parent);
 
+int sys_user_wait(int pid);
 // current running process
 extern process* current;
 // virtual address of our simple heap
