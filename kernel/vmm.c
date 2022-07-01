@@ -180,19 +180,25 @@ void *user_va_to_pa(pagetable_t page_dir, void *va)
   // (va - va & (1<<PGSHIFT -1)) means computing the offset of "va" in its page.
   // Also, it is possible that "va" is not mapped at all. in such case, we can find
   // invalid PTE, and should return NULL.
+
+  //为了在page_dir所指向的页表中查找逻辑地址va，就必须通过调用页表操作相关函数找到包含va的页表项（PTE），
+  //通过该PTE的内容得知va所在的物理页面的首地址，最后再通过计算va在页内的位移得到va最终对应的物理地址。
   uint64 va_tmp = (uint64)va;
   pte_t *pte = page_walk(page_dir, va_tmp, 0);
 
   if (pte)
   {
-    uint64 pa = PTE2PA(*pte) + (va_tmp & ((1 << PGSHIFT) - 1));
+    //首先通过页表项*pte取得页地址
+    uint64 pa = PTE2PA(*pte);
+    //与业内偏移相加即为物理地址
+    pa+= (va_tmp & ((1 << PGSHIFT) - 1));
     return (void *)pa;
   }
   else
   {
     return NULL;
   }
-  //panic("You have to implement user_va_to_pa (convert user va to pa) to print messages in lab2_1.\n");
+  // panic("You have to implement user_va_to_pa (convert user va to pa) to print messages in lab2_1.\n");
 }
 
 //
