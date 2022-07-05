@@ -1,9 +1,5 @@
 ## 术语
 
-### trapframe
-
-![image-20220628174112241](C:\Users\cytmo\AppData\Roaming\Typora\typora-user-images\image-20220628174112241.png)
-
 ## RISCV 模式
 
 ### 介绍
@@ -81,25 +77,15 @@ System is shutting down with exit code 0.
 
 ### 思考题
 
-#### 1 中断处理例程`smode_trap_vector`函数执行到第31行时，将栈切换到用户进程“自带”的“用户内核栈“，也就是`kernel/process.c`文件中`switch_to`函数的第35行所引用的`proc->kstack`，而不使用PKE内核自己的栈，这里请读者思考为何要这样安排？
+#### 1这里请读者思考为什么要将tf->epc的值进行加4处理？这个问题请结合你对RISC-V指令集架构的理解，以及系统调用的原理回答。
 
-
-
-
-
-#### 2这里请读者思考为什么要将tf->epc的值进行加4处理？这个问题请结合你对RISC-V指令集架构的理解，以及系统调用的原理回答。
-
-**EPC** ：Exception Program Counter (CP0 Register 14, Select 0), 异常返回地址[寄存器](https://so.csdn.net/so/search?q=寄存器&spm=1001.2101.3001.7020)，用于存储异常返回地址。
+**EPC** ：Exception Program Counter (CP0 Register 14, Select 0), 异常返回地址寄存器，用于存储异常返回地址。
 
 系统调用后 EPC应返回的是下一条指令的地址，而在RV64G中，每条指令有32位，也即四个字节，所以应当加四
 
-#### 3我们的PKE操作系统内核是如何得到应用程序中“hello world!”字符串的地址的呢？
+#### 2我们的PKE操作系统内核是如何得到应用程序中“hello world!”字符串的地址的呢？
 
-printu函数将用户要打印的字符串地址存储在const char* buf并通过调用
-
-` do_user_call(SYS_user_print, (uint64)buf, n, 0, 0, 0, 0, 0); `
-
-传递给do_user_call，其进行系统调用ecall并将该地址传递给操作系统内核
+printu函数将用户要打印的字符串地址存储在const char* buf并通过调用` do_user_call(SYS_user_print, (uint64)buf, n, 0, 0, 0, 0, 0); `传递给do_user_call，其进行系统调用ecall并将该地址传递给操作系统内核
 
 
 
@@ -239,48 +225,7 @@ User exit with code:0.
 
 由于初始时时钟中断部分尚未完成，在收到第一个时钟信号后，程序便会发生崩溃，因此死循环并不会导致死机
 
-
-
-##  lab1_challenge1 打印用户程序调用栈
-
-### 修改内容
-
-` kernel/syscall.c，kernel/syscall.h，user/user_lib.c，user/user_lib.h`
-
-```C
-//user/user_lib.h 添加对应的函数
-int print_backtrace(int n);
-//kernel/syscall.c 添加对应的系统调用处理函数
-//print_backtrace() is used by user/lab3_1_backtrace.c
-int print_backtrace(int n) {
-  return do_user_call(SYS_user_backtrace, n, 0, 0, 0, 0, 0, 0);
-}
-
-//相应的，在/kernel/syscall.h中添加对应的宏
-#define SYS_user_backtrace (SYS_user_base + 6)
-
-//在/kernel/syscall.c long do_syscall(long a0, long a1, long a2, long a3, long a4, long a5, long a6, long a7)中添加对应的宏
-  case SYS_user_backtrace:
-    return sys_user_backtrace(a1);
-```
-
-
-
-### 运行结果
-
-```bash
-
-```
-
-
-
-### 思考题
-
-#### 1
-
-
-
-## lab2_1 系统调用
+## lab2_1 虚实地址转换
 
 ### 修改内容
 
@@ -300,15 +245,16 @@ void *user_va_to_pa(pagetable_t page_dir, void *va)
   // invalid PTE, and should return NULL.
     
   //为了在page_dir所指向的页表中查找逻辑地址va，就必须通过调用页表操作相关函数找到包含va的页表项（PTE），通过该PTE的内容得知va所在的物理页面的首地址，最后再通过计算va在页内的位移得到va最终对应的物理地址。
- uint64 va_tmp = (uint64)va;
+  uint64 va_tmp = (uint64)va;
   pte_t *pte = page_walk(page_dir, va_tmp, 0);
 
-  if (pte)
+ if (pte)
   {
     //首先通过页表项*pte取得页地址
+    //将pte的低十位即各种设置位置0，左移十二位留出页偏移的空间
     uint64 pa = PTE2PA(*pte);
-    //与业内偏移相加即为物理地址
-    pa+= (va_tmp & ((1 << PGSHIFT) - 1));
+    //与页内偏移相加即为物理地址
+    pa += (va_tmp & ((1 << PGSHIFT) - 1));
     return (void *)pa;
   }
   else
@@ -377,7 +323,7 @@ void user_vm_unmap(pagetable_t page_dir, uint64 va, uint64 size, int free)
   // as naive_free reclaims only one page at a time, you only need to consider one page
   // to make user/app_naive_malloc to produce the correct hehavior.
 
-  //首选通过lookup_pa函数得到物理地址，然后通过free_page函数释放物理页面。
+  //首先通过lookup_pa函数得到物理地址，然后通过free_page函数释放物理页面。
   uint64 pa = lookup_pa(page_dir, va);
   free_page((void *)pa);
   // panic("You have to implement user_vm_unmap to free pages using naive_free in lab2_2.\n");
@@ -423,14 +369,6 @@ System is shutting down with exit code 0.
 
 
 
-### 思考题
-
-#### 1可以看到，在我们的PKE操作系统内核中，应用程序执行过程中所动态分配（类似malloc）的内存是被映射到USER_FREE_ADDRESS_START（4MB）开始的地址的。那么，这里的USER_FREE_ADDRESS_START对应图4.5中的用户进程的逻辑地址空间的哪个部分呢？这一点请读者自行判断，并分析为什么是4MB，以及能不能用其他的逻辑地址？
-
-
-
-
-
 ## lab2_3 缺页异常
 
 ### 修改内容
@@ -449,14 +387,19 @@ void handle_user_page_fault(uint64 mcause, uint64 sepc, uint64 stval)
     // hint: first allocate a new physical page, and then, maps the new page to the
     // virtual address that causes the page fault.
 
-    //首先判断缺页的逻辑地址在用户进程逻辑地址空间中的位置，
+   //首先判断缺页的逻辑地址stval在用户进程逻辑地址空间中的位置，
     //看是不是比USER_STACK_TOP小，且比我们预设的可能的用户栈的最小栈底指针要大
-    if ((stval < 0x7ffff000) && (stval >= (0x7ffff000 - 0x14000))) 
-    { 
+    // virtual address of stack top of user process
+    // vmm.h 中定义 #define USER_STACK_TOP 0x7ffff000
+    // 比我们预设的可能的用户栈的最小栈底指针要大，用户栈空间一个上限，20个4KB的页面，即81920，转换为16进制即为14000
+    if ((stval < 0x7ffff000) && (stval >= (0x7ffff000 - 0x14000)))
+    {
       //若为合法的逻辑地址，则分配一个新的物理页，并将其映射到缺页的逻辑地址上
       void *pa = alloc_page();
-      //4k对齐
+      //去除低十二位的页内偏移
       uint64 va = stval & 0xfffffffffffff000;
+      //U (User) 位表示该页是不是一个用户模式页。如果U=1，表示用户模式下的代码可以访问该页，否则就表示不能访问。
+      //R (Read) 、W (Write) 和X (eXecutable) 位分别表示此页对应的实页是否可读、可写和可执行。
       user_vm_map((pagetable_t)current->pagetable, va, PGSIZE, (uint64)pa,
                   prot_to_type(PROT_WRITE | PROT_READ, 1));
     }
@@ -886,14 +829,16 @@ System is shutting down with exit code 0.
 
 
 
-##  lab3_challenge1 进程等待和数据段复制（难度：★★☆☆☆）
+##  lab3_challenge1 进程等待和数据段复制
 
 ### 修改内容
 
 通过修改PKE内核和系统调用，为用户程序提供wait函数的功能，wait函数接受一个参数pid：
-当pid为-1时，父进程等待任意一个子进程退出即返回子进程的pid；
-当pid大于0时，父进程等待进程号为pid的子进程退出即返回子进程的pid；
-如果pid不合法或pid大于0且pid对应的进程不是当前进程的子进程，返回-1。
+
+- 当pid为-1时，父进程等待任意一个子进程退出即返回子进程的pid；
+- 当pid大于0时，父进程等待进程号为pid的子进程退出即返回子进程的pid；
+- 如果pid不合法或pid大于0且pid对应的进程不是当前进程的子进程，返回-1。
+
 补充do_fork函数，实验3_1实现了代码段的复制，你需要继续实现数据段的复制并保证fork后父子进程的数据段相互独立。
 
 ` /user/user_lib.h`
@@ -956,7 +901,7 @@ long do_syscall(long a0, long a1, long a2, long a3, long a4, long a5, long a6, l
     return sys_user_yield();
   //add here
   case SYS_user_wait:
-    return wait(a1);  
+    return sys_user_wait(a1);  
   default:
     panic("Unknown syscall %ld \n", a0);
   }
@@ -971,21 +916,25 @@ long do_syscall(long a0, long a1, long a2, long a3, long a4, long a5, long a6, l
 
 ```c
 //process.h
+#define WAIT_NOT_END -2
+#define WAIT_PID_ILLEGAL -1
+#define WAIT_END_NORMALLY 0
 int sys_user_wait(int pid);
+
 //process.c
 //数据段复制
  case DATA_SEGMENT:
     {
       //进行数据段复制，将所有虚拟页映射到新的物理页
       //循环取得parent的数据段的所有页 mapping_info is unused if npages == 0
-      for (int j = 0; j < parent->mapped_info[i].npages; j++)
+      if(parent->mapped_info[i].npages!=0)
       {
         //取得parent的数据段的物理地址，其虚拟地址存储在mapped_info[i].va
-        uint64 address = lookup_pa(parent->pagetable, parent->mapped_info[i].va + j * PGSIZE);
+        uint64 address = lookup_pa(parent->pagetable, parent->mapped_info[i].va);
         //分配新页，并将父进程的数据段内容映射到新页上
         char *newaddress = alloc_page();
         memcpy(newaddress, (void *)address, PGSIZE);
-        map_pages(child->pagetable, parent->mapped_info[i].va + j * PGSIZE, PGSIZE,
+        map_pages(child->pagetable, parent->mapped_info[i].va, PGSIZE,
                   (uint64)newaddress, prot_to_type(PROT_WRITE | PROT_READ, 1));
       }
 
@@ -1010,7 +959,6 @@ int sys_user_wait(int pid)
     bool found = FALSE;
     //检查进程池是否有属于当前进程的子进程
     for (int i = 0; i < NPROC; i++)
-    {
       if (procs[i].parent == current)
       {
         found = TRUE;
@@ -1021,13 +969,12 @@ int sys_user_wait(int pid)
           return i;
         }
       }
-      if (found)
-        //如果有子进程，但是没有结束，则返回WAIT_NOT_END
-        return WAIT_NOT_END;
-      else
-        //否则pid不合法，返回WAIT_PID_ILLEGAL
-        return WAIT_PID_ILLEGAL;
-    }
+    if (found)
+      //如果有子进程，但是没有结束，则返回WAIT_NOT_END
+      return WAIT_NOT_END;
+    else
+      //否则pid不合法，返回WAIT_PID_ILLEGAL
+      return WAIT_PID_ILLEGAL;
   }
   // 当pid大于0时，父进程等待进程号为pid的子进程退出即返回子进程的pid；
   else if (pid > 0)
@@ -1038,17 +985,23 @@ int sys_user_wait(int pid)
     //检查pid是否属于当前进程的子进程
     if (procs[pid].parent != current)
       return WAIT_PID_ILLEGAL;
-    //检查该子进程是否已经结束，结束，则返回子进程pid
-    if (procs[pid].status == ZOMBIE)
-    {
-      procs[pid].status = FREE;
-      return pid;
-    }
     else
-      return WAIT_NOT_END;
+    {
+      //检查该子进程是否已经结束，结束，则返回子进程pid
+      if (procs[pid].status == ZOMBIE)
+      {
+        procs[pid].status = FREE;
+        return pid;
+      }
+      else
+        return WAIT_NOT_END;
+    }
   }
-  return WAIT_NOT_END;
+  else
+    return WAIT_PID_ILLEGAL;
 }
+
+
 
 ```
 
